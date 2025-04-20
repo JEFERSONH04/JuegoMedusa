@@ -28,8 +28,8 @@ var game = (function () {
     playerShot,
     bgMain,
     bgBoss,
-    evilSpeed = 2,
-    totalEvils = 7,
+    evilSpeed = 1.5,
+    totalEvils = 10,
     playerLife = 3,
     shotSpeed = 5,
     playerSpeed = 5,
@@ -39,7 +39,7 @@ var game = (function () {
     minHorizontalOffset = 100,
     maxHorizontalOffset = 600,
     evilShots = 5, // disparos que tiene el malo al principio
-    evilLife = 3, // vidas que tiene el malo al principio (se van incrementando)
+    evilLife = 2, // vidas que tiene el malo al principio (se van incrementando)
     finalBossShots = 30,
     finalBossLife = 12,
     totalBestScoresToShow = 5, // las mejores puntuaciones que se mostraran
@@ -68,6 +68,9 @@ var game = (function () {
     now = 0;
 
   var evils = []; // Arreglo que almacenará todos los enemigos
+  var normalEnemiesCreated = 0; // Contador de enemigos normales creados
+  var FinalbossSpawn = false;
+  var stopEnemyGeneration = false;
 
   function loop() {
     update();
@@ -115,8 +118,8 @@ var game = (function () {
     bufferctx = buffer.getContext("2d");
 
     player = new Player(playerLife, 0);
-    evilCounter = 1;
-    for (var i = 0; i < 2; i++) {
+    evilCounter = 0;
+    for (var i = 0; i < 5; i++) {
       // Aquí defines cuántos enemigos quieres que aparezcan inicialmente
       createNewEvil();
     }
@@ -135,9 +138,13 @@ var game = (function () {
 
   function showLifeAndScore() {
     bufferctx.fillStyle = "rgb(255, 255, 255)";
-    bufferctx.font = "bold 16px 'Press Start 2P'";
+    bufferctx.font = "12px 'Press Start 2P'";
     bufferctx.fillText("Puntos: " + player.score, canvas.width - 160, 20);
     bufferctx.fillText("Vidas: " + player.life, canvas.width - 160, 40);
+    bufferctx.fillText("Puntos: " + player.score, canvas.width - 160, 20);
+    bufferctx.fillText("Enemigos: " + evilCounter, canvas.width - 160, 60);
+    bufferctx.fillText("Matar: " + totalEvils, canvas.width - 160, 80);
+    bufferctx.fillText("JefeFinal: " + FinalbossSpawn, canvas.width - 200, 100);
   }
 
   function getRandomNumber(range) {
@@ -192,7 +199,9 @@ var game = (function () {
         evilShotsBuffer.splice(0, evilShotsBuffer.length);
         playerShotsBuffer.splice(0, playerShotsBuffer.length);
         this.src = playerKilledImage.src;
-        createNewEvil();
+        if (stopEnemyGeneration === false) {
+          createNewEvil();
+        }
         setTimeout(function () {
           player = new Player(player.life - 1, player.score);
         }, 500);
@@ -283,10 +292,18 @@ var game = (function () {
     this.direction = "D";
 
     this.kill = function () {
-      this.dead = true;
-      totalEvils--;
-      this.image = enemyImages.killed;
-      verifyToCreateNewEvil();
+      if (!this.dead) {
+        // Prevenir múltiples ejecuciones
+        this.dead = true;
+        // Decrementa totalEvils SOLO si es mayor que 0
+        if (totalEvils > 0) {
+          totalEvils--;
+        }
+        this.image = enemyImages.killed; // Cambia a la imagen de muerte
+        this.deathTime = new Date().getTime(); // Guarda el instante de muerte en milisegundos
+        // Llamamos a verifyToCreateNewEvil() si es necesario, pero ya no eliminaremos inmediatamente al enemigo.
+        verifyToCreateNewEvil();
+      }
     };
 
     this.update = function () {
@@ -337,7 +354,7 @@ var game = (function () {
     }
     setTimeout(function () {
       shoot();
-    }, 1000 + 2500);
+    }, 1000 + getRandomNumber(2500));
 
     this.toString = function () {
       return (
@@ -358,7 +375,7 @@ var game = (function () {
       disparos,
       evilImages
     );
-    this.goDownSpeed = evilSpeed / 4;
+    this.goDownSpeed = evilSpeed / 10;
     this.pointsToKill = 5 + evilCounter;
   }
 
@@ -367,6 +384,8 @@ var game = (function () {
 
   var boss = new Audio("audio/finalboss.mp3");
   function FinalBoss() {
+    FinalbossSpawn = true; // Se marca que el jefe final ha aparecido.
+    stopEnemyGeneration = true;
     ingame.volume = 0;
     boss.play();
     Object.getPrototypeOf(FinalBoss.prototype).constructor.call(
@@ -375,8 +394,26 @@ var game = (function () {
       finalBossShots,
       bossImages
     );
-    this.goDownSpeed = evilSpeed / 2;
+    this.goDownSpeed = evilSpeed / 12;
     this.pointsToKill = 20;
+
+    // Sobrescribimos el método kill para el jefe final
+    var self = this;
+    this.kill = function () {
+      if (self.dead) return; // Evitar múltiples ejecuciones
+      self.dead = true;
+      self.image = bossImages.killed; // Asigna la imagen del jefe final muerto
+      self.deathTime = new Date().getTime();
+
+      // Después de 2 segundos, se marca FinalbossSpawn en false
+      setTimeout(function () {
+        FinalbossSpawn = false;
+        // Decrementa totalEvils SOLO si es mayor que 0
+        if (totalEvils > 0) {
+          totalEvils--;
+        }
+      }, 2000);
+    };
   }
 
   FinalBoss.prototype = Object.create(Enemy.prototype);
@@ -384,11 +421,11 @@ var game = (function () {
   /******************************* FIN ENEMIGOS *******************************/
 
   function verifyToCreateNewEvil() {
-    if (totalEvils > 0) {
+    if (totalEvils > 0 && stopEnemyGeneration === false) {
       setTimeout(function () {
         createNewEvil();
         evilCounter++;
-      }, 3000);
+      }, getRandomNumber(3000));
     } else {
       setTimeout(function () {
         saveFinalScore();
@@ -398,7 +435,7 @@ var game = (function () {
   }
 
   function createNewEvil() {
-    if (totalEvils != 1) {
+    if (totalEvils > 1 && FinalbossSpawn === false) {
       evil = new Evil(evilLife + evilCounter - 1, evilShots + evilCounter - 1);
     } else {
       evil = new FinalBoss();
@@ -526,6 +563,11 @@ var game = (function () {
       canvas.width / 2 - 200,
       canvas.height / 2 + 60
     );
+    bufferctx.fillText(
+      "PUNTUACION TOTAL: " + FinalbossSpawn,
+      canvas.width / 2 - 200,
+      canvas.height / 2 + 90
+    );
   }
 
   function getTotalScore() {
@@ -535,54 +577,63 @@ var game = (function () {
   function update() {
     drawBackground();
 
-    if (congratulations) {
+    if (totalEvils === 0 && FinalbossSpawn === false) {
       showCongratulations();
       return;
     }
 
     if (youLoose) {
       ingame.pause();
-      boss.pause();
       showGameOver();
-      // Crear y configurar el audio
-      const audio = new Audio("audio/gameover.mp3"); //
+      const audio = new Audio("audio/gameover.mp3");
       audio.loop = true;
       return;
     }
 
+    // Dibuja al jugador
     bufferctx.drawImage(player, player.posX, player.posY);
+
+    // Recorre el arreglo de enemigos (evils)
     for (var i = evils.length - 1; i >= 0; i--) {
       var enemigo = evils[i];
+
+      // Si el enemigo no está muerto, actualiza y dibuja normalmente
       if (!enemigo.dead) {
         enemigo.update();
         bufferctx.drawImage(enemigo.image, enemigo.posX, enemigo.posY);
         if (enemigo.isOutOfScreen()) {
           enemigo.kill();
-          evils.splice(i, 1); // Elimina el enemigo que ya salió de pantalla
-          // Si deseas regenerar nuevos enemigos, podrías invocar verifyToCreateNewEvil() aquí
         }
+      } else {
+        // El enemigo ya está muerto, dibujamos su imagen de muerte
+        bufferctx.drawImage(enemigo.image, enemigo.posX, enemigo.posY);
       }
     }
 
-    updateEvil();
-
+    // Actualiza y dibuja los disparos del jugador
     for (var j = 0; j < playerShotsBuffer.length; j++) {
       var disparoBueno = playerShotsBuffer[j];
       updatePlayerShot(disparoBueno, j);
     }
 
+    /// Si se detecta colisión entre el jugador y algún enemigo
     if (isEvilHittingPlayer()) {
+      // Si el jefe final está activo, detenemos la generación de nuevos enemigos
+      if (FinalbossSpawn === true) {
+        stopEnemyGeneration = true;
+      }
       player.killPlayer();
     } else {
-      for (var i = 0; i < evilShotsBuffer.length; i++) {
-        var evilShot = evilShotsBuffer[i];
-        updateEvilShot(evilShot, i);
+      for (var k = 0; k < evilShotsBuffer.length; k++) {
+        var evilShot = evilShotsBuffer[k];
+        updateEvilShot(evilShot, k);
       }
     }
 
     showLifeAndScore();
-
     playerAction();
+    // Finalmente, se dibuja el contenido del buffer en el canvas principal
+    draw();
   }
 
   function updatePlayerShot(playerShot, id) {
